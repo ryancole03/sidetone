@@ -1,0 +1,22 @@
+# Build outputs
+app/bin/
+app/obj/
+
+# IDE
+.vs/
+*.user
+*.suo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Build artifacts (keep source only)
+*.dll
+*.lib
+*.exp
+*.obj
+*.pdb
