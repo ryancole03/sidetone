@@ -3,7 +3,7 @@ setlocal
 
 echo Setting up build environment...
 
-set "VCPKG_DIR=%~dp0..\..\vcpkg\installed\x64-windows"
+set "VCPKG_DIR=C:\Users\Ryan\vcpkg\installed\x64-windows"
 set "SDK_DIR=C:\Program Files (x86)\Windows Kits\10"
 
 for /d %%D in ("C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\*") do set "MSVC_VER=%%D"
