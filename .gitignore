@@ -1,6 +1,10 @@
 # Build outputs
 app/bin/
 app/obj/
+app/publish/
+
+# Release artifacts
+*.zip
 
 # IDE
 .vs/

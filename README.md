@@ -4,6 +4,8 @@
 
 A Windows application that captures microphone input and plays it through speakers/headphones with noise suppression, providing real-time sidetone for if you can't stand not being able to hear yourself when talking on discord/games.
 
+![Sidetone Screenshot](screenshot.png)
+
 ## Features
 
 - Real-time microphone passthrough with low-latency WASAPI
@@ -49,7 +51,7 @@ cd app
 .\build.bat
 ```
 
-Output: `app\bin\Release\net5.0-windows\Sidetone.exe`
+Output: `app\publish\` (portable, self-contained)
 
 ## Usage
 
