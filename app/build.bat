@@ -3,27 +3,45 @@ setlocal
 
 echo Setting up build environment...
 
-set VCPKG_DIR=%~dp0..\..\vcpkg\installed\x64-windows
-set MSVC_DIR=C:\Program Files (x86)\Microsoft Visual Studio\2022
-set SDK_DIR=C:\Program Files (x86)\Windows Kits\10
+set "VCPKG_DIR=%~dp0..\..\vcpkg\installed\x64-windows"
+set "SDK_DIR=C:\Program Files (x86)\Windows Kits\10"
 
-for /d %%D in ("%MSVC_DIR%\*\BuildTools\VC\Tools\MSVC\*") do set MSVC_VER=%%D
-for /d %%D in ("%SDK_DIR%\Include\10.*") do set SDK_VER=%%~nxD
+for /d %%D in ("C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\*") do set "MSVC_VER=%%D"
+for /d %%D in ("C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\*") do set "MSVC_VER_FALLBACK=%%D"
+for /d %%D in ("C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\*") do set "MSVC_VER_FALLBACK=%%D"
 
-set CL_PATH=%MSVC_VER%\bin\Hostx64\x64
-set INCLUDE=%MSVC_VER%\include
-set INCLUDE=%INCLUDE%;%VCPKG_DIR%\include
-set INCLUDE=%INCLUDE%;%SDK_DIR%\Include\%SDK_VER%\ucrt
-set INCLUDE=%INCLUDE%;%SDK_DIR%\Include\%SDK_VER%\shared
-set INCLUDE=%INCLUDE%;%SDK_DIR%\Include\%SDK_VER%\um
-set INCLUDE=%INCLUDE%;%SDK_DIR%\Include\%SDK_VER%\winrt
+if not defined MSVC_VER (
+    if defined MSVC_VER_FALLBACK (
+        set "MSVC_VER=%MSVC_VER_FALLBACK%"
+    )
+)
 
-set LIB=%MSVC_VER%\lib\onecore\x64
-set LIB=%LIB%;%VCPKG_DIR%\lib
-set LIB=%LIB%;%SDK_DIR%\Lib\%SDK_VER%\ucrt\x64
-set LIB=%LIB%;%SDK_DIR%\Lib\%SDK_VER%\um\x64
+for /d %%D in ("%SDK_DIR%\Include\10.*") do set "SDK_VER=%%~nxD"
 
-set PATH=%CL_PATH%;%PATH%
+if not defined MSVC_VER (
+    echo ERROR: MSVC not found. Install Visual Studio Build Tools 2019 or 2022.
+    exit /b 1
+)
+
+if not defined SDK_VER (
+    echo ERROR: Windows SDK not found.
+    exit /b 1
+)
+
+set "CL_PATH=%MSVC_VER%\bin\Hostx64\x64"
+set "INCLUDE=%MSVC_VER%\include"
+set "INCLUDE=%INCLUDE%;%VCPKG_DIR%\include"
+set "INCLUDE=%INCLUDE%;%SDK_DIR%\Include\%SDK_VER%\ucrt"
+set "INCLUDE=%INCLUDE%;%SDK_DIR%\Include\%SDK_VER%\shared"
+set "INCLUDE=%INCLUDE%;%SDK_DIR%\Include\%SDK_VER%\um"
+set "INCLUDE=%INCLUDE%;%SDK_DIR%\Include\%SDK_VER%\winrt"
+
+set "LIB=%MSVC_VER%\lib\onecore\x64"
+set "LIB=%LIB%;%VCPKG_DIR%\lib"
+set "LIB=%LIB%;%SDK_DIR%\Lib\%SDK_VER%\ucrt\x64"
+set "LIB=%LIB%;%SDK_DIR%\Lib\%SDK_VER%\um\x64"
+
+set "PATH=%CL_PATH%;%PATH%"
 
 if not exist "%~dp0..\libspeexdsp.dll" (
     echo Copying libspeexdsp.dll...
