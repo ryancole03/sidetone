@@ -53,7 +53,7 @@ Output: `app\bin\Release\net5.0-windows\Sidetone.exe`
 
 ## Usage
 
-Run `Sidetone.exe` and click "Stop" to begin audio passthrough.
+Run `Sidetone.exe` and click "Start" to begin audio passthrough.
 
 Adjust sliders to control:
 - **Playback Volume**: Output volume (0-200%)
