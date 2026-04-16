@@ -2,7 +2,7 @@
 
 *Vibe-coded slop, from me to you.*
 
-A Windows application that captures microphone input and plays it through speakers/headphones with noise suppression, providing real-time sidetone for VoIP calls.
+A Windows application that captures microphone input and plays it through speakers/headphones with noise suppression, providing real-time sidetone for if you can't stand not being able to hear yourself when talking on discord/games.
 
 ## Features
 
