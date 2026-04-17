@@ -5,10 +5,17 @@ using System.Windows.Input;
 
 namespace SidetoneApp
 {
+    public class DeviceItem
+    {
+        public string Name { get; set; }
+        public string Id { get; set; }
+    }
+
     public partial class MainWindow : Window
     {
         private bool _initialized = false;
         private bool _loadingValues = false;
+        private bool _loadingDevices = false;
 
         public MainWindow()
         {
@@ -29,6 +36,8 @@ namespace SidetoneApp
 
             Native.Sidetone_Init();
 
+            LoadDevices();
+
             if (Native.Sidetone_IsActive() == 0)
             {
                 ToggleButton.Content = "Start";
@@ -39,6 +48,8 @@ namespace SidetoneApp
             int gainVal = Native.Sidetone_GetGainPercent();
             int suppressVal = Native.Sidetone_GetSuppressionPercent();
             int inputGainVal = Native.Sidetone_GetInputGainPercent();
+            int gateVal = Native.Sidetone_GetNoiseGateThreshold();
+            int bufferVal = Native.Sidetone_GetBufferSize();
 
             GainSlider.Value = gainVal;
             GainValue.Text = gainVal + "%";
@@ -49,8 +60,135 @@ namespace SidetoneApp
             InputGainSlider.Value = inputGainVal;
             InputGainValue.Text = inputGainVal + "%";
 
+            GateSlider.Value = gateVal;
+            GateValue.Text = gateVal + "%";
+
+            BufferSlider.Value = bufferVal;
+            BufferValue.Text = bufferVal.ToString();
+            double initMs = bufferVal * 1000.0 / 48000.0;
+            BufferLatency.Text = $"{bufferVal} frames (~{initMs:F1}ms)";
+            UpdateSampleRateDisplay();
+
             _loadingValues = false;
             _initialized = true;
+        }
+
+        private void LoadDevices()
+        {
+            _loadingDevices = true;
+
+            int inputCount = Native.Sidetone_GetInputDeviceCount();
+            for (int i = 0; i < inputCount; i++)
+            {
+                char[] id = new char[256];
+                char[] name = new char[256];
+                if (Native.Sidetone_GetInputDevice(i, id, name, 256) == 1)
+                {
+                    InputDeviceCombo.Items.Add(new DeviceItem
+                    {
+                        Name = new string(name).TrimEnd('\0'),
+                        Id = new string(id).TrimEnd('\0')
+                    });
+                }
+            }
+
+            int outputCount = Native.Sidetone_GetOutputDeviceCount();
+            for (int i = 0; i < outputCount; i++)
+            {
+                char[] id = new char[256];
+                char[] name = new char[256];
+                if (Native.Sidetone_GetOutputDevice(i, id, name, 256) == 1)
+                {
+                    OutputDeviceCombo.Items.Add(new DeviceItem
+                    {
+                        Name = new string(name).TrimEnd('\0'),
+                        Id = new string(id).TrimEnd('\0')
+                    });
+                }
+            }
+
+            char[] currentInputId = new char[256];
+            char[] currentOutputId = new char[256];
+            Native.Sidetone_GetCurrentInputDevice(currentInputId, 256);
+            Native.Sidetone_GetCurrentOutputDevice(currentOutputId, 256);
+
+            string inputIdStr = new string(currentInputId).TrimEnd('\0');
+            string outputIdStr = new string(currentOutputId).TrimEnd('\0');
+
+            for (int i = 0; i < InputDeviceCombo.Items.Count; i++)
+            {
+                var item = (DeviceItem)InputDeviceCombo.Items[i];
+                if (item.Id == inputIdStr || (string.IsNullOrEmpty(inputIdStr) && i == 0))
+                {
+                    InputDeviceCombo.SelectedIndex = i;
+                    break;
+                }
+            }
+
+            for (int i = 0; i < OutputDeviceCombo.Items.Count; i++)
+            {
+                var item = (DeviceItem)OutputDeviceCombo.Items[i];
+                if (item.Id == outputIdStr || (string.IsNullOrEmpty(outputIdStr) && i == 0))
+                {
+                    OutputDeviceCombo.SelectedIndex = i;
+                    break;
+                }
+            }
+
+            _loadingDevices = false;
+        }
+
+        private void RestartIfRunning()
+        {
+            if (!_initialized) return;
+
+            bool wasActive = Native.Sidetone_IsActive() != 0;
+            if (wasActive)
+            {
+                Native.Sidetone_Stop();
+                System.Threading.Thread.Sleep(100);
+                Native.Sidetone_Start();
+            }
+        }
+
+        private void UpdateSampleRateDisplay()
+        {
+            int inputRate = Native.Sidetone_GetInputSampleRate();
+            int outputRate = Native.Sidetone_GetOutputSampleRate();
+            SampleRateDisplay.Text = $"Input: {inputRate} Hz | Output: {outputRate} Hz";
+            
+            if (inputRate != outputRate) {
+                SampleRateDisplay.Foreground = new System.Windows.Media.SolidColorBrush(
+                    System.Windows.Media.Color.FromRgb(255, 100, 100));
+            } else {
+                SampleRateDisplay.Foreground = new System.Windows.Media.SolidColorBrush(
+                    System.Windows.Media.Color.FromRgb(128, 128, 128));
+            }
+        }
+
+        private void InputDeviceCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loadingDevices || !_initialized) return;
+
+            var selected = InputDeviceCombo.SelectedItem as DeviceItem;
+            if (selected != null)
+            {
+                Native.Sidetone_SetInputDevice(selected.Id);
+                RestartIfRunning();
+            }
+        }
+
+        private void OutputDeviceCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_loadingDevices || !_initialized) return;
+
+            var selected = OutputDeviceCombo.SelectedItem as DeviceItem;
+            if (selected != null)
+            {
+                Native.Sidetone_SetOutputDevice(selected.Id);
+                RestartIfRunning();
+                UpdateSampleRateDisplay();
+            }
         }
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
@@ -96,6 +234,25 @@ namespace SidetoneApp
             int val = (int)Math.Round(e.NewValue);
             InputGainValue.Text = val + "%";
             Native.Sidetone_SetInputGainPercent(val);
+        }
+
+        private void GateSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (!_initialized || _loadingValues) return;
+            int val = (int)Math.Round(e.NewValue);
+            GateValue.Text = val + "%";
+            Native.Sidetone_SetNoiseGateThreshold(val);
+        }
+
+        private void BufferSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (!_initialized || _loadingValues) return;
+            int val = (int)Math.Round(e.NewValue);
+            BufferValue.Text = val.ToString();
+            double ms = val * 1000.0 / 48000.0;
+            BufferLatency.Text = $"{val} frames (~{ms:F1}ms)";
+            Native.Sidetone_SetBufferSize(val);
+            RestartIfRunning();
         }
 
         private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

@@ -3,20 +3,32 @@ setlocal
 
 echo Setting up build environment...
 
-set "VCPKG_DIR=C:\Users\Ryan\vcpkg\installed\x64-windows"
+taskkill /F /IM Sidetone.exe 2>nul
+
+if defined VCPKG_ROOT (
+    set "VCPKG_DIR=%VCPKG_ROOT%\installed\x64-windows"
+) else if exist "%USERPROFILE%\vcpkg\installed\x64-windows" (
+    set "VCPKG_DIR=%USERPROFILE%\vcpkg\installed\x64-windows"
+) else (
+    for %%D in (C D E F G H I J K L M N O P Q R S T U V W X Y Z) do (
+        if exist "%%D:\vcpkg\installed\x64-windows" set "VCPKG_DIR=%%D:\vcpkg\installed\x64-windows"
+    )
+)
 set "SDK_DIR=C:\Program Files (x86)\Windows Kits\10"
 
-for /d %%D in ("C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\*") do set "MSVC_VER=%%D"
-for /d %%D in ("C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\*") do set "MSVC_VER_FALLBACK=%%D"
-for /d %%D in ("C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\*") do set "MSVC_VER_FALLBACK=%%D"
+for %%D in (C D E F G H I J K L M N O P Q R S T U V W X Y Z) do (
+    for /d %%V in ("%%D:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\*") do set "MSVC_VER=%%V"
+    for /d %%V in ("%%D:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\*") do set "MSVC_VER_FALLBACK=%%V"
+    for /d %%V in ("%%D:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\*") do set "MSVC_VER_FALLBACK=%%V"
+    for /d %%S in ("%%D:\Program Files (x86)\Windows Kits\10\Include\10.*") do set "SDK_VER=%%~nxS"
+    if exist "%%D:\Program Files (x86)\Windows Kits\10" set "SDK_DIR=%%D:\Program Files (x86)\Windows Kits\10"
+)
 
 if not defined MSVC_VER (
     if defined MSVC_VER_FALLBACK (
         set "MSVC_VER=%MSVC_VER_FALLBACK%"
     )
 )
-
-for /d %%D in ("%SDK_DIR%\Include\10.*") do set "SDK_VER=%%~nxD"
 
 if not defined MSVC_VER (
     echo ERROR: MSVC not found. Install Visual Studio Build Tools 2019 or 2022.

@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Sidetone"
         Width="380"
-        Height="360"
+        Height="560"
         WindowStyle="None"
         AllowsTransparency="True"
         WindowStartupLocation="CenterScreen"
@@ -44,6 +44,20 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="Black"/>
+            <Setter Property="BorderBrush" Value="#505050"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="13"/>
+        </Style>
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="Foreground" Value="Black"/>
+            <Setter Property="Padding" Value="8,6"/>
         </Style>
     </Window.Resources>
 
@@ -93,6 +107,10 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
@@ -108,9 +126,37 @@
                 Click="ToggleButton_Click"
                 Width="300"
                 Height="40"
-                Margin="0,0,0,24"/>
+                Margin="0,0,0,16"/>
 
-        <StackPanel Grid.Row="2" Margin="0,0,0,16">
+        <StackPanel Grid.Row="2" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="50"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Input Device" FontSize="13"/>
+            </Grid>
+            <ComboBox x:Name="InputDeviceCombo"
+                      Margin="0,4,0,0"
+                      DisplayMemberPath="Name"
+                      SelectionChanged="InputDeviceCombo_SelectionChanged"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="3" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="50"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Output Device" FontSize="13"/>
+            </Grid>
+            <ComboBox x:Name="OutputDeviceCombo"
+                      Margin="0,4,0,0"
+                      DisplayMemberPath="Name"
+                      SelectionChanged="OutputDeviceCombo_SelectionChanged"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="4" Margin="0,0,0,12">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -126,7 +172,7 @@
                     Margin="0,4,0,0"/>
         </StackPanel>
 
-        <StackPanel Grid.Row="3" Margin="0,0,0,16">
+        <StackPanel Grid.Row="5" Margin="0,0,0,12">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -142,7 +188,7 @@
                     Margin="0,4,0,0"/>
         </StackPanel>
 
-        <StackPanel Grid.Row="4" Margin="0,0,0,16">
+        <StackPanel Grid.Row="6" Margin="0,0,0,12">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -158,7 +204,51 @@
                     Margin="0,4,0,0"/>
         </StackPanel>
 
-        <TextBlock Grid.Row="5"
+        <StackPanel Grid.Row="7" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="50"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Noise Gate" FontSize="13"/>
+                <TextBlock Grid.Column="1" x:Name="GateValue" Text="0%" FontSize="13" HorizontalAlignment="Right"/>
+            </Grid>
+            <Slider x:Name="GateSlider"
+                    Minimum="0" Maximum="100"
+                    Value="0"
+                    ValueChanged="GateSlider_ValueChanged"
+                    Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="8" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="50"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Buffer Size" FontSize="13"/>
+                <TextBlock Grid.Column="1" x:Name="BufferValue" Text="128" FontSize="13" HorizontalAlignment="Right"/>
+            </Grid>
+            <Slider x:Name="BufferSlider"
+                    Minimum="64" Maximum="1024"
+                    Value="128"
+                    TickFrequency="64"
+                    IsSnapToTickEnabled="True"
+                    ValueChanged="BufferSlider_ValueChanged"
+                    Margin="0,4,0,0"/>
+            <TextBlock Text="128 frames (~3ms)"
+                       x:Name="BufferLatency"
+                       FontSize="10"
+                       Foreground="#808080"
+                       Margin="0,2,0,0"/>
+            <TextBlock Text="Input: 48000 Hz | Output: 48000 Hz"
+                       x:Name="SampleRateDisplay"
+                       FontSize="10"
+                       Foreground="#808080"
+                       Margin="0,2,0,0"/>
+        </StackPanel>
+
+        <TextBlock Grid.Row="9"
                    Text="Sidetone"
                    FontSize="11"
                    Foreground="#606060"

@@ -6,11 +6,15 @@
 #include <commctrl.h>
 #include <uxtheme.h>
 #include <vssym32.h>
+#include <propkey.h>
+#include <propsys.h>
 
 #include <mmdeviceapi.h>
 #include <audioclient.h>
 #include <functiondiscoverykeys_devpkey.h>
 #include <shlobj.h>
+#include <propkey.h>
+#include <propsys.h>
 
 #include <speex/speex_preprocess.h>
 
@@ -56,16 +60,21 @@ DEFINE_GUID(KSDATAFORMAT_SUBTYPE_IEEE_FLOAT,
 #define MAX_CHANNELS 8
 #define QUEUE_FRAMES 8192
 #define RNNOISE_SAMPLE_QUEUE 8192
+#define BUFFER_FRAMES 128
 
 typedef struct {
     int gainPercent;
     int suppressionPercent;
     int inputGainPercent;
+    int noiseGateThreshold;
+    int bufferSize;
     volatile LONG active;
+    wchar_t inputDeviceId[256];
+    wchar_t outputDeviceId[256];
     CRITICAL_SECTION cs;
 } State;
 
-static State gState = { 25, 75, 100, 1, {0} };
+static State gState = { 25, 75, 100, 10, 128, 1, {0}, {0}, {0} };
 static HANDLE gExitEvent = NULL;
 static HANDLE gStartEvent = NULL;
 static float gFrameQueue[QUEUE_FRAMES * MAX_CHANNELS];
@@ -219,12 +228,18 @@ void Sidetone_LoadSettings(void)
     int gainI = GetPrivateProfileIntW(L"Settings", L"gain", 25, path);
     int suppressI = GetPrivateProfileIntW(L"Settings", L"suppression", 75, path);
     int inputGainI = GetPrivateProfileIntW(L"Settings", L"inputGain", 100, path);
+    int noiseGateI = GetPrivateProfileIntW(L"Settings", L"noiseGate", 10, path);
+    int bufferSizeI = GetPrivateProfileIntW(L"Settings", L"bufferSize", 256, path);
     int activeI = GetPrivateProfileIntW(L"Settings", L"active", 1, path);
     
     EnterCriticalSection(&gState.cs);
     gState.gainPercent = gainI;
     gState.suppressionPercent = suppressI;
     gState.inputGainPercent = inputGainI;
+    gState.noiseGateThreshold = noiseGateI;
+    gState.bufferSize = bufferSizeI;
+    GetPrivateProfileStringW(L"Settings", L"inputDevice", L"", gState.inputDeviceId, 256, path);
+    GetPrivateProfileStringW(L"Settings", L"outputDevice", L"", gState.outputDeviceId, 256, path);
     LeaveCriticalSection(&gState.cs);
     InterlockedExchange(&gState.active, activeI);
 }
@@ -245,9 +260,21 @@ void Sidetone_SaveSettings(void)
     
     wsprintfW(buf, L"%d", gState.inputGainPercent);
     WritePrivateProfileStringW(L"Settings", L"inputGain", buf, path);
+
+    wsprintfW(buf, L"%d", gState.noiseGateThreshold);
+    WritePrivateProfileStringW(L"Settings", L"noiseGate", buf, path);
+
+    wsprintfW(buf, L"%d", gState.bufferSize);
+    WritePrivateProfileStringW(L"Settings", L"bufferSize", buf, path);
     
     wsprintfW(buf, L"%d", gState.active);
     WritePrivateProfileStringW(L"Settings", L"active", buf, path);
+
+    if (gState.inputDeviceId[0] != L'\0')
+        WritePrivateProfileStringW(L"Settings", L"inputDevice", gState.inputDeviceId, path);
+    if (gState.outputDeviceId[0] != L'\0')
+        WritePrivateProfileStringW(L"Settings", L"outputDevice", gState.outputDeviceId, path);
+
     LeaveCriticalSection(&gState.cs);
 }
 
@@ -279,6 +306,13 @@ DWORD WINAPI audio_thread(LPVOID arg)
     float speexOutput[256];
     int speexIdx = 0;
     int speexOutputReady = 0;
+    int speexVadResult = 0;
+
+    float gateGain = 1.0f;
+    int gateHoldCounter = 0;
+
+    float levelHistory[12] = {0.0f};
+    int historyIndex = 0;
 
     HANDLE hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
     if (!hEvent) return 1;
@@ -292,13 +326,33 @@ DWORD WINAPI audio_thread(LPVOID arg)
     );
     if (FAILED(hr)) return 1;
 
-    enumerator->lpVtbl->GetDefaultAudioEndpoint(
-        enumerator, eCapture, eConsole, &inputDevice
-    );
+    State *s = (State*)arg;
+    wchar_t inputId[256] = {0};
+    wchar_t outputId[256] = {0};
 
-    enumerator->lpVtbl->GetDefaultAudioEndpoint(
-        enumerator, eRender, eConsole, &outputDevice
-    );
+    EnterCriticalSection(&s->cs);
+    wcsncpy_s(inputId, 256, s->inputDeviceId, _TRUNCATE);
+    wcsncpy_s(outputId, 256, s->outputDeviceId, _TRUNCATE);
+    int bufferFrames = s->bufferSize;
+    LeaveCriticalSection(&s->cs);
+
+    if (inputId[0] != L'\0') {
+        hr = enumerator->lpVtbl->GetDevice(enumerator, inputId, &inputDevice);
+        if (FAILED(hr)) inputDevice = NULL;
+    }
+    if (!inputDevice) {
+        hr = enumerator->lpVtbl->GetDefaultAudioEndpoint(enumerator, eCapture, eConsole, &inputDevice);
+    }
+
+    if (outputId[0] != L'\0') {
+        hr = enumerator->lpVtbl->GetDevice(enumerator, outputId, &outputDevice);
+        if (FAILED(hr)) outputDevice = NULL;
+    }
+    if (!outputDevice) {
+        hr = enumerator->lpVtbl->GetDefaultAudioEndpoint(enumerator, eRender, eConsole, &outputDevice);
+    }
+
+    if (!inputDevice || !outputDevice) return 1;
 
     hr = inputDevice->lpVtbl->Activate(
         inputDevice, &IID_IAudioClient2, CLSCTX_ALL, NULL, (void**)&captureClient2
@@ -329,10 +383,21 @@ DWORD WINAPI audio_thread(LPVOID arg)
         captureClient,
         AUDCLNT_SHAREMODE_SHARED,
         AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
-        0, 0,
+        bufferFrames * 10000000 / captureFormat->nSamplesPerSec,
+        0,
         captureFormat,
         NULL
     );
+    if (FAILED(hr)) {
+        hr = captureClient->lpVtbl->Initialize(
+            captureClient,
+            AUDCLNT_SHAREMODE_SHARED,
+            AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+            0, 0,
+            captureFormat,
+            NULL
+        );
+    }
     if (FAILED(hr)) return 1;
 
     hr = captureClient->lpVtbl->SetEventHandle(captureClient, hEvent);
@@ -355,8 +420,7 @@ DWORD WINAPI audio_thread(LPVOID arg)
     renderChannels = renderFormat->nChannels;
 
     if (renderSampleFormat == SAMPLE_UNKNOWN ||
-        renderChannels == 0 || renderChannels > MAX_CHANNELS ||
-        renderFormat->nSamplesPerSec != captureFormat->nSamplesPerSec) {
+        renderChannels == 0 || renderChannels > MAX_CHANNELS) {
         return 1;
     }
     
@@ -383,7 +447,8 @@ DWORD WINAPI audio_thread(LPVOID arg)
         renderClient,
         AUDCLNT_SHAREMODE_SHARED,
         0,
-        0, 0,
+        bufferFrames * 10000000 / renderFormat->nSamplesPerSec,
+        0,
         renderFormat,
         NULL
     );
@@ -401,8 +466,6 @@ DWORD WINAPI audio_thread(LPVOID arg)
     if (FAILED(hr)) return 1;
 
     SetEvent(gStartEvent);
-
-    State *s = (State*)arg;
 
     while (1)
     {
@@ -504,9 +567,13 @@ DWORD WINAPI audio_thread(LPVOID arg)
                         
                         speex_preprocess_run(speex, intBuf);
                         
+                        int vad = 0;
+                        speex_preprocess_ctl(speex, SPEEX_PREPROCESS_GET_VAD, &vad);
+                        
                         for (int i = 0; i < speexFrameSize; i++)
                             speexOutput[i] = intBuf[i] / 32767.0f;
                         
+                        speexVadResult = vad;
                         speexOutputReady = speexFrameSize;
                         speexIdx = 0;
                     }
@@ -520,6 +587,60 @@ DWORD WINAPI audio_thread(LPVOID arg)
                 } else {
                     wetSample = drySample;
                 }
+
+                float inputLevel = wetSample;
+                float gatePercent = s->noiseGateThreshold;
+                LeaveCriticalSection(&s->cs);
+
+                if (inputLevel < 0) inputLevel = -inputLevel;
+
+                levelHistory[historyIndex] = inputLevel;
+                historyIndex = (historyIndex + 1) % 12;
+                
+                float sumSquares = 0.0f;
+                for (int i = 0; i < 12; i++) {
+                    sumSquares += levelHistory[i] * levelHistory[i];
+                }
+                float rmsLevel = sqrtf(sumSquares / 12.0f);
+
+                float targetGain = 1.0f;
+                static int gateHoldCounter = 0;
+                const int gateHoldFrames = 40;
+
+                if (gatePercent > 0) {
+                    float openThreshold = gatePercent * 0.0004f;
+                    int noVoice = (speexVadResult == 0);
+                    int belowThreshold = (rmsLevel < openThreshold);
+
+                    if (noVoice && belowThreshold) {
+                        if (gateHoldCounter < gateHoldFrames) {
+                            gateHoldCounter++;
+                        } else {
+                            targetGain = 0.0f;
+                        }
+                    } else {
+                        if (gateHoldCounter > 0) {
+                            gateHoldCounter--;
+                        }
+                        targetGain = 1.0f;
+                    }
+
+                    float attackCoeff = 0.05f;
+                    float releaseCoeff = 0.02f;
+
+                    if (targetGain > gateGain) {
+                        gateGain += attackCoeff;
+                        if (gateGain > targetGain) gateGain = targetGain;
+                    } else if (targetGain < gateGain) {
+                        gateGain -= releaseCoeff;
+                        if (gateGain < targetGain) gateGain = targetGain;
+                    }
+                } else {
+                    gateGain = 1.0f;
+                    gateHoldCounter = 0;
+                }
+
+                wetSample = wetSample * gateGain;
 
                 LONG isActive = InterlockedOr(&gState.active, 0);
 
@@ -545,7 +666,7 @@ DWORD WINAPI audio_thread(LPVOID arg)
 
                 static int frameCounter = 0;
                 if (speex && ++frameCounter >= 1000) {
-                    int noiseSuppress = -5 - (int)(suppression * 50);
+                    int noiseSuppress = -15 - (int)(suppression * 20);
                     speex_preprocess_ctl(speex, SPEEX_PREPROCESS_SET_NOISE_SUPPRESS, &noiseSuppress);
                     frameCounter = 0;
                 }
@@ -712,6 +833,296 @@ EXPORT int Sidetone_GetInputGainPercent(void)
     int percent = gState.inputGainPercent;
     LeaveCriticalSection(&gState.cs);
     return percent;
+}
+
+EXPORT int Sidetone_GetInputDeviceCount(void)
+{
+    IMMDeviceEnumerator *enumerator = NULL;
+    IMMDeviceCollection *collection = NULL;
+    int count = 0;
+
+    CoInitializeEx(NULL, COINIT_MULTITHREADED);
+
+    HRESULT hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL, &IID_IMMDeviceEnumerator, (void**)&enumerator);
+    if (FAILED(hr) || !enumerator) { CoUninitialize(); return 0; }
+
+    hr = enumerator->lpVtbl->EnumAudioEndpoints(enumerator, eCapture, DEVICE_STATE_ACTIVE, &collection);
+    if (SUCCEEDED(hr) && collection) {
+        collection->lpVtbl->GetCount(collection, (UINT*)&count);
+        collection->lpVtbl->Release(collection);
+    }
+    enumerator->lpVtbl->Release(enumerator);
+    CoUninitialize();
+    return count;
+}
+
+EXPORT int Sidetone_GetInputDevice(int index, wchar_t *id, wchar_t *name, int bufferSize)
+{
+    IMMDeviceEnumerator *enumerator = NULL;
+    IMMDeviceCollection *collection = NULL;
+    IMMDevice *device = NULL;
+    int result = 0;
+
+    CoInitializeEx(NULL, COINIT_MULTITHREADED);
+
+    HRESULT hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL, &IID_IMMDeviceEnumerator, (void**)&enumerator);
+    if (FAILED(hr) || !enumerator) { CoUninitialize(); return 0; }
+
+    hr = enumerator->lpVtbl->EnumAudioEndpoints(enumerator, eCapture, DEVICE_STATE_ACTIVE, &collection);
+    if (SUCCEEDED(hr) && collection) {
+        UINT count = 0;
+        collection->lpVtbl->GetCount(collection, &count);
+        if (index < (int)count) {
+            hr = collection->lpVtbl->Item(collection, index, &device);
+            if (SUCCEEDED(hr) && device) {
+                LPWSTR deviceId = NULL;
+                hr = device->lpVtbl->GetId(device, &deviceId);
+                if (SUCCEEDED(hr) && deviceId && id) {
+                    wcsncpy_s(id, bufferSize, deviceId, _TRUNCATE);
+                    CoTaskMemFree(deviceId);
+                    result = 1;
+                }
+                IPropertyStore *propStore = NULL;
+                hr = device->lpVtbl->OpenPropertyStore(device, STGM_READ, &propStore);
+                if (SUCCEEDED(hr) && propStore) {
+                    PROPVARIANT varName;
+                    PropVariantInit(&varName);
+                    hr = propStore->lpVtbl->GetValue(propStore, &PKEY_Device_FriendlyName, &varName);
+                    if (SUCCEEDED(hr) && varName.pwszVal && name) {
+                        wcsncpy_s(name, bufferSize, varName.pwszVal, _TRUNCATE);
+                    }
+                    PropVariantClear(&varName);
+                    propStore->lpVtbl->Release(propStore);
+                }
+                device->lpVtbl->Release(device);
+            }
+        }
+        collection->lpVtbl->Release(collection);
+    }
+    enumerator->lpVtbl->Release(enumerator);
+    CoUninitialize();
+    return result;
+}
+
+EXPORT int Sidetone_GetOutputDeviceCount(void)
+{
+    IMMDeviceEnumerator *enumerator = NULL;
+    IMMDeviceCollection *collection = NULL;
+    int count = 0;
+
+    CoInitializeEx(NULL, COINIT_MULTITHREADED);
+
+    HRESULT hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL, &IID_IMMDeviceEnumerator, (void**)&enumerator);
+    if (FAILED(hr) || !enumerator) { CoUninitialize(); return 0; }
+
+    hr = enumerator->lpVtbl->EnumAudioEndpoints(enumerator, eRender, DEVICE_STATE_ACTIVE, &collection);
+    if (SUCCEEDED(hr) && collection) {
+        collection->lpVtbl->GetCount(collection, (UINT*)&count);
+        collection->lpVtbl->Release(collection);
+    }
+    enumerator->lpVtbl->Release(enumerator);
+    CoUninitialize();
+    return count;
+}
+
+EXPORT int Sidetone_GetOutputDevice(int index, wchar_t *id, wchar_t *name, int bufferSize)
+{
+    IMMDeviceEnumerator *enumerator = NULL;
+    IMMDeviceCollection *collection = NULL;
+    IMMDevice *device = NULL;
+    int result = 0;
+
+    CoInitializeEx(NULL, COINIT_MULTITHREADED);
+
+    HRESULT hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL, &IID_IMMDeviceEnumerator, (void**)&enumerator);
+    if (FAILED(hr) || !enumerator) { CoUninitialize(); return 0; }
+
+    hr = enumerator->lpVtbl->EnumAudioEndpoints(enumerator, eRender, DEVICE_STATE_ACTIVE, &collection);
+    if (SUCCEEDED(hr) && collection) {
+        UINT count = 0;
+        collection->lpVtbl->GetCount(collection, &count);
+        if (index < (int)count) {
+            hr = collection->lpVtbl->Item(collection, index, &device);
+            if (SUCCEEDED(hr) && device) {
+                LPWSTR deviceId = NULL;
+                hr = device->lpVtbl->GetId(device, &deviceId);
+                if (SUCCEEDED(hr) && deviceId && id) {
+                    wcsncpy_s(id, bufferSize, deviceId, _TRUNCATE);
+                    CoTaskMemFree(deviceId);
+                    result = 1;
+                }
+                IPropertyStore *propStore = NULL;
+                hr = device->lpVtbl->OpenPropertyStore(device, STGM_READ, &propStore);
+                if (SUCCEEDED(hr) && propStore) {
+                    PROPVARIANT varName;
+                    PropVariantInit(&varName);
+                    hr = propStore->lpVtbl->GetValue(propStore, &PKEY_Device_FriendlyName, &varName);
+                    if (SUCCEEDED(hr) && varName.pwszVal && name) {
+                        wcsncpy_s(name, bufferSize, varName.pwszVal, _TRUNCATE);
+                    }
+                    PropVariantClear(&varName);
+                    propStore->lpVtbl->Release(propStore);
+                }
+                device->lpVtbl->Release(device);
+            }
+        }
+        collection->lpVtbl->Release(collection);
+    }
+    enumerator->lpVtbl->Release(enumerator);
+    CoUninitialize();
+    return result;
+}
+
+EXPORT void Sidetone_SetInputDevice(const wchar_t *deviceId)
+{
+    EnterCriticalSection(&gState.cs);
+    if (deviceId) wcsncpy_s(gState.inputDeviceId, 256, deviceId, _TRUNCATE);
+    else gState.inputDeviceId[0] = L'\0';
+    LeaveCriticalSection(&gState.cs);
+}
+
+EXPORT void Sidetone_SetOutputDevice(const wchar_t *deviceId)
+{
+    EnterCriticalSection(&gState.cs);
+    if (deviceId) wcsncpy_s(gState.outputDeviceId, 256, deviceId, _TRUNCATE);
+    else gState.outputDeviceId[0] = L'\0';
+    LeaveCriticalSection(&gState.cs);
+}
+
+EXPORT void Sidetone_GetCurrentInputDevice(wchar_t *deviceId, int bufferSize)
+{
+    EnterCriticalSection(&gState.cs);
+    wcsncpy_s(deviceId, (rsize_t)bufferSize, gState.inputDeviceId, _TRUNCATE);
+    LeaveCriticalSection(&gState.cs);
+}
+
+EXPORT void Sidetone_GetCurrentOutputDevice(wchar_t *deviceId, int bufferSize)
+{
+    EnterCriticalSection(&gState.cs);
+    wcsncpy_s(deviceId, (rsize_t)bufferSize, gState.outputDeviceId, _TRUNCATE);
+    LeaveCriticalSection(&gState.cs);
+}
+
+EXPORT void Sidetone_SetNoiseGateThreshold(int threshold)
+{
+    EnterCriticalSection(&gState.cs);
+    gState.noiseGateThreshold = threshold;
+    LeaveCriticalSection(&gState.cs);
+}
+
+EXPORT int Sidetone_GetNoiseGateThreshold(void)
+{
+    EnterCriticalSection(&gState.cs);
+    int threshold = gState.noiseGateThreshold;
+    LeaveCriticalSection(&gState.cs);
+    return threshold;
+}
+
+EXPORT void Sidetone_SetBufferSize(int size)
+{
+    EnterCriticalSection(&gState.cs);
+    if (size >= 64 && size <= 1024) {
+        gState.bufferSize = size;
+    }
+    LeaveCriticalSection(&gState.cs);
+}
+
+EXPORT int Sidetone_GetBufferSize(void)
+{
+    EnterCriticalSection(&gState.cs);
+    int size = gState.bufferSize;
+    LeaveCriticalSection(&gState.cs);
+    return size;
+}
+
+EXPORT int Sidetone_GetInputSampleRate(void)
+{
+    int sampleRate = 48000;
+    
+    HRESULT hr;
+    IMMDeviceEnumerator *enumerator = NULL;
+    IMMDevice *device = NULL;
+    
+    CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    
+    hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL, &IID_IMMDeviceEnumerator, (void**)&enumerator);
+    if (SUCCEEDED(hr) && enumerator) {
+        wchar_t inputId[256] = {0};
+        EnterCriticalSection(&gState.cs);
+        wcsncpy_s(inputId, 256, gState.inputDeviceId, _TRUNCATE);
+        LeaveCriticalSection(&gState.cs);
+        
+        if (inputId[0] != L'\0') {
+            hr = enumerator->lpVtbl->GetDevice(enumerator, inputId, &device);
+        }
+        if (!device) {
+            enumerator->lpVtbl->GetDefaultAudioEndpoint(enumerator, eCapture, eConsole, &device);
+        }
+        
+        if (device) {
+            IAudioClient *client = NULL;
+            hr = device->lpVtbl->Activate(device, &IID_IAudioClient, CLSCTX_ALL, NULL, (void**)&client);
+            if (SUCCEEDED(hr) && client) {
+                WAVEFORMATEX *fmt = NULL;
+                hr = client->lpVtbl->GetMixFormat(client, &fmt);
+                if (SUCCEEDED(hr) && fmt) {
+                    sampleRate = fmt->nSamplesPerSec;
+                    CoTaskMemFree(fmt);
+                }
+                client->lpVtbl->Release(client);
+            }
+            device->lpVtbl->Release(device);
+        }
+        enumerator->lpVtbl->Release(enumerator);
+    }
+    
+    CoUninitialize();
+    return sampleRate;
+}
+
+EXPORT int Sidetone_GetOutputSampleRate(void)
+{
+    int sampleRate = 48000;
+    
+    HRESULT hr;
+    IMMDeviceEnumerator *enumerator = NULL;
+    IMMDevice *device = NULL;
+    
+    CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    
+    hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL, &IID_IMMDeviceEnumerator, (void**)&enumerator);
+    if (SUCCEEDED(hr) && enumerator) {
+        wchar_t outputId[256] = {0};
+        EnterCriticalSection(&gState.cs);
+        wcsncpy_s(outputId, 256, gState.outputDeviceId, _TRUNCATE);
+        LeaveCriticalSection(&gState.cs);
+        
+        if (outputId[0] != L'\0') {
+            hr = enumerator->lpVtbl->GetDevice(enumerator, outputId, &device);
+        }
+        if (!device) {
+            enumerator->lpVtbl->GetDefaultAudioEndpoint(enumerator, eRender, eConsole, &device);
+        }
+        
+        if (device) {
+            IAudioClient *client = NULL;
+            hr = device->lpVtbl->Activate(device, &IID_IAudioClient, CLSCTX_ALL, NULL, (void**)&client);
+            if (SUCCEEDED(hr) && client) {
+                WAVEFORMATEX *fmt = NULL;
+                hr = client->lpVtbl->GetMixFormat(client, &fmt);
+                if (SUCCEEDED(hr) && fmt) {
+                    sampleRate = fmt->nSamplesPerSec;
+                    CoTaskMemFree(fmt);
+                }
+                client->lpVtbl->Release(client);
+            }
+            device->lpVtbl->Release(device);
+        }
+        enumerator->lpVtbl->Release(enumerator);
+    }
+    
+    CoUninitialize();
+    return sampleRate;
 }
 
 #ifdef __cplusplus

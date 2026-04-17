@@ -1,0 +1,110 @@
+{
+  "name": "sidetone",
+  "description": "Sidetone desktop app - WPF with C WASAPI audio engine for microphone sidetone through headphones",
+  "instructions": "This is a WPF desktop app (.NET 5) with a C-based WASAPI audio engine. Key files: engine.c (audio processing), Native.cs (P/Invoke), MainWindow.xaml/cs (UI). The app provides microphone sidetone (hear your mic through headphones).",
+  "context": {
+    "project_type": "WPF desktop app (.NET 5)",
+    "language": "C# + C (WASAPI audio)",
+    "key_files": [
+      "engine.c - C audio engine with WASAPI, Speex noise suppression, noise gate",
+      "app/Native.cs - P/Invoke declarations for engine functions",
+      "app/MainWindow.xaml - WPF UI with device dropdowns, sliders",
+      "app/MainWindow.xaml.cs - UI logic, device handling"
+    ],
+    "build_command": "cd app && ./build.bat",
+    "vcpkg_path": "c:\\Users\\Ryan\\vcpkg\\installed\\x64-windows"
+  },
+  "important_constants": {
+    "BUFFER_FRAMES": "128 (adjustable via UI 64-1024)",
+    "FRAMES": "32",
+    "speexFrameSize": "256",
+    "default_sample_rate": "48000 Hz"
+  },
+  "noise_gate_settings": {
+    "rms_samples": "12",
+    "hysteresis_close_percent": "40",
+    "minimum_floor": "0.005",
+    "attack_release": "0.1"
+  },
+  "noise_gate_implementation": {
+    "method": "VAD + RMS threshold hybrid",
+    "hold_frames": "40 (requires ~40ms of no voice before closing)",
+    "attack_coefficient": "0.05",
+    "release_coefficient": "0.02",
+    "threshold_formula": "gatePercent * 0.0004"
+  },
+  "noise_suppression_formula": "-15 - (suppression * 20) dB",
+  "known_behaviors": [
+    "Bluetooth headphones have inherent Windows audio latency/distortion issues - app-level fixes limited",
+    "Sample rate mismatch between input/output devices can cause issues (display shows Hz)",
+    "Buffer size adjustment available in UI - higher values = more stable but more latency"
+  ],
+  "discovered_issues_and_solutions": [
+    {
+      "issue": "Warbly/distorted artifacts from noise suppression when not talking",
+      "attempts": [
+        "RMS-only gate caused buzzing/clicking sounds",
+        "Hard threshold gate with attack/release caused popping and distortion",
+        "Floor gain and margin gain multipliers caused more buzzing"
+      ],
+      "solution": "Use Speex VAD combined with RMS threshold - only close gate when both VAD says no voice AND RMS below threshold"
+    },
+    {
+      "issue": "Gate chattering at syllable boundaries (rapid open/close)",
+      "solution": "Added hold counter (40 frames) so gate only closes after sustained no-voice, and slower attack (0.05) for smoother transitions"
+    },
+    {
+      "issue": "Tiny static/distortion for a couple ms when gate engages",
+      "solution": "Increased hold frames from 20 to 40, reduced attack from 0.1 to 0.05"
+    }
+  ],
+  "audio_pipeline": {
+    "description": "Audio signal flow from microphone to headphones",
+    "flow_diagram": [
+      "Microphone Input (WASAPI Capture)",
+      "  -> Input Gain (multiplier)",
+      "  -> Speex Preprocess (noise suppression + VAD)",
+      "  -> Noise Gate (VAD + RMS hybrid with hold)",
+      "  -> Playback Volume (multiplier)",
+      "  -> Output (WASAPI Render)"
+    ],
+    "key_components": {
+      "engine.c:main_loop": "WASAPI capture/render loop, processes audio per-frame",
+      "engine.c:read_sample_as_float": "Converts various sample formats (PCM16/32, float) to normalized float",
+      "engine.c:speex_preprocess_run": "Runs Speex noise suppression and VAD on 256-sample frames",
+      "engine.c:gate_logic": "VAD + RMS hybrid gate with 40-frame hold and smooth attack/release"
+    },
+    "timing_notes": "FRAMES=32 (1ms at 32kHz), processing happens per-sample but Speex operates on 256-sample blocks"
+  },
+  "things_not_to_do": [
+    "Do not touch or modify the Speex noise suppression logic - it is working perfectly",
+    "Do not bypass or remove the noise suppression - it is an important part of the audio pipeline",
+    "Do not use hard binary gate without hold counter - causes severe distortion",
+    "Do not use fast attack coefficients (> 0.1) - causes popping/pumping"
+  ],
+  "always_run_build": "After any code changes, always run build.bat in the app directory to verify the build succeeds before reporting completion",
+  "maintenance": "Continuously update this skill file with important discoveries, solved problems, and dead-ends encountered during development to prevent future sessions from repeating the same mistakes",
+  "github_release_instructions": {
+    "steps": [
+      "1. Ensure all changes are committed and pushed to master",
+      "2. Create a git tag with version number: git tag -a vX.Y.Z -m 'Release vX.Y.Z'",
+      "3. Push the tag: git push origin vX.Y.Z",
+      "4. Use gh release create to create release with changelog",
+      "5. Attach the portable app from app/publish folder"
+    ],
+    "example_tag": "git tag -a v1.0.0 -m 'Release v1.0.0'",
+    "example_release": "gh release create v1.0.0 --title 'Sidetone v1.0.0' --notes-file CHANGELOG.md",
+    "files_to_attach": ["app/publish/Sidetone.exe", "app/publish/NativeLib.dll", "app/publish/libspeexdsp.dll"]
+  },
+  "ui_controls": [
+    "Start/Stop toggle",
+    "Input device dropdown",
+    "Output device dropdown",
+    "Playback Volume slider",
+    "Noise Suppression slider",
+    "Microphone Gain slider",
+    "Noise Gate slider (0-100%)",
+    "Buffer Size slider (64-1024, step 64)",
+    "Sample rate display (shows input/output Hz)"
+  ]
+}
