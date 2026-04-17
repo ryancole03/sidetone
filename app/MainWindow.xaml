@@ -139,7 +139,17 @@
             <ComboBox x:Name="InputDeviceCombo"
                       Margin="0,4,0,0"
                       DisplayMemberPath="Name"
-                      SelectionChanged="InputDeviceCombo_SelectionChanged"/>
+                      SelectionChanged="InputDeviceCombo_SelectionChanged">
+                <ComboBox.Style>
+                    <Style TargetType="ComboBox">
+                        <Style.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#888888"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </ComboBox.Style>
+            </ComboBox>
         </StackPanel>
 
         <StackPanel Grid.Row="3" Margin="0,0,0,12">
@@ -153,7 +163,17 @@
             <ComboBox x:Name="OutputDeviceCombo"
                       Margin="0,4,0,0"
                       DisplayMemberPath="Name"
-                      SelectionChanged="OutputDeviceCombo_SelectionChanged"/>
+                      SelectionChanged="OutputDeviceCombo_SelectionChanged">
+                <ComboBox.Style>
+                    <Style TargetType="ComboBox">
+                        <Style.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#888888"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </ComboBox.Style>
+            </ComboBox>
         </StackPanel>
 
         <StackPanel Grid.Row="4" Margin="0,0,0,12">
