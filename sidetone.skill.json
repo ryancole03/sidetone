@@ -12,7 +12,7 @@
       "app/MainWindow.xaml.cs - UI logic, device handling"
     ],
     "build_command": "cd app && ./build.bat",
-    "vcpkg_path": "c:\\Users\\Ryan\\vcpkg\\installed\\x64-windows"
+    "vcpkg_note": "build.bat auto-detects vcpkg from common locations - no manual path needed"
   },
   "important_constants": {
     "BUFFER_FRAMES": "128 (adjustable via UI 64-1024)",

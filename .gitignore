@@ -3,6 +3,9 @@ app/bin/
 app/obj/
 app/publish/
 
+# Tools
+tools/
+
 # Release artifacts
 *.zip
 
