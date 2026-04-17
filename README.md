@@ -10,7 +10,9 @@ A Windows application that captures microphone input and plays it through speake
 
 - Real-time microphone passthrough with low-latency WASAPI
 - Noise suppression using SpeexDSP
-- Adjustable playback volume, noise suppression, and input gain
+- Noise gate to suppress artifacts when not talking
+- Adjustable playback volume, noise suppression, input gain, and noise gate
+- Buffer size and sample rate controls for tuning latency/quality
 - Modern flat UI with rounded corners
 
 ## Dependencies
@@ -61,6 +63,10 @@ Adjust sliders to control:
 - **Playback Volume**: Output volume (0-200%)
 - **Noise Suppression**: Noise reduction strength (0-100%)
 - **Microphone Gain**: Input gain (0-200%)
+- **Noise Gate**: Gate threshold (0-100%) - higher = more aggressive
+- **Buffer Size**: Audio buffer size (64-1024 frames) - lower = less latency
+
+The input/output sample rates are displayed in Hz.
 
 ## License
 

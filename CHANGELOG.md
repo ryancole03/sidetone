@@ -8,6 +8,9 @@
 - Buffer size adjustment in UI (64-1024 frames)
 - Sample rate display showing input/output Hz
 
+### Changed
+- build.bat now auto-detects MSVC, Windows SDK, and vcpkg locations (no hardcoded paths)
+
 ### Fixed
 - Resolved warbly/distorted artifacts from noise suppression when idle
 - Fixed gate chattering at syllable boundaries by adding hold counter and slower attack
