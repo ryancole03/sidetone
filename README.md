@@ -15,6 +15,11 @@ A Windows application that captures microphone input and plays it through speake
 - Buffer size and sample rate controls for tuning latency/quality
 - Modern flat UI with rounded corners
 
+## Known Limitations
+
+- **Bluetooth headphones**: Have inherent Windows audio latency and distortion issues - these are Windows-level problems that cannot be fully fixed at the application level
+- **Sample rate mismatch**: Using input and output devices with different sample rates can cause audio issues (the app displays current Hz for each device)
+
 ## Dependencies
 
 | Library | Version | License | Link |
