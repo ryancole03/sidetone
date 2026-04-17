@@ -170,11 +170,12 @@ namespace SidetoneApp
         {
             if (_loadingDevices || !_initialized) return;
 
+            if (Native.Sidetone_IsActive() != 0) return;
+
             var selected = InputDeviceCombo.SelectedItem as DeviceItem;
             if (selected != null)
             {
                 Native.Sidetone_SetInputDevice(selected.Id);
-                RestartIfRunning();
             }
         }
 
@@ -182,11 +183,12 @@ namespace SidetoneApp
         {
             if (_loadingDevices || !_initialized) return;
 
+            if (Native.Sidetone_IsActive() != 0) return;
+
             var selected = OutputDeviceCombo.SelectedItem as DeviceItem;
             if (selected != null)
             {
                 Native.Sidetone_SetOutputDevice(selected.Id);
-                RestartIfRunning();
                 UpdateSampleRateDisplay();
             }
         }
@@ -203,12 +205,16 @@ namespace SidetoneApp
             {
                 Native.Sidetone_SetActive(0);
                 ToggleButton.Content = "Start";
+                InputDeviceCombo.IsEnabled = true;
+                OutputDeviceCombo.IsEnabled = true;
             }
             else
             {
                 Native.Sidetone_Start();
                 Native.Sidetone_SetActive(1);
                 ToggleButton.Content = "Stop";
+                InputDeviceCombo.IsEnabled = false;
+                OutputDeviceCombo.IsEnabled = false;
             }
         }
 
