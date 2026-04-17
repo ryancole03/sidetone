@@ -37,7 +37,8 @@
   "known_behaviors": [
     "Bluetooth headphones have inherent Windows audio latency/distortion issues - app-level fixes limited",
     "Sample rate mismatch between input/output devices can cause issues (display shows Hz)",
-    "Buffer size adjustment available in UI - higher values = more stable but more latency"
+    "Buffer size adjustment available in UI - higher values = more stable but more latency",
+    "Changing input/output devices while sidetone is running can cause issues - device dropdowns are now disabled while active"
   ],
   "discovered_issues_and_solutions": [
     {
@@ -56,6 +57,10 @@
     {
       "issue": "Tiny static/distortion for a couple ms when gate engages",
       "solution": "Increased hold frames from 20 to 40, reduced attack from 0.1 to 0.05"
+    },
+    {
+      "issue": "Changing input/output devices while sidetone is running causes issues",
+      "solution": "Disable device dropdowns while sidetone is running, re-enable when stopped. Grey out dropdown text when disabled."
     }
   ],
   "audio_pipeline": {
