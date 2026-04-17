@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.1] - 2026-04-17
+
+### Fixed
+- Disabled device dropdowns while sidetone is running to prevent issues when changing devices
+- Greyed out dropdown text when disabled for better visual feedback
+
 ## [1.1.0] - 2026-04-17
 
 ### Added
