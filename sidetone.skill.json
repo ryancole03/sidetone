@@ -95,12 +95,14 @@
       "2. Create a git tag with version number: git tag -a vX.Y.Z -m 'Release vX.Y.Z'",
       "3. Push the tag: git push origin vX.Y.Z",
       "4. Use gh release create to create release with changelog",
-      "5. Attach the portable app from app/publish folder"
+      "5. Zip the files from app/publish folder (Sidetone.exe, NativeLib.dll, libspeexdsp.dll)",
+      "6. Upload the ZIP file to the release (NOT individual files)"
     ],
     "important_note": "ALWAYS wait for user confirmation that fixes/features work before doing any GitHub push. Test the build locally first and get user approval before committing/pushing.",
     "example_tag": "git tag -a v1.0.0 -m 'Release v1.0.0'",
     "example_release": "gh release create v1.0.0 --title 'Sidetone v1.0.0' --notes-file CHANGELOG.md",
-    "files_to_attach": ["app/publish/Sidetone.exe", "app/publish/NativeLib.dll", "app/publish/libspeexdsp.dll"]
+    "files_to_attach": ["app/publish/Sidetone-v1.0.0-win-x64.zip"],
+    "zip_format_note": "Always zip the release files. Filename format: Sidetone-vX.Y.Z-win-x64.zip"
   },
   "ui_controls": [
     "Start/Stop toggle",
